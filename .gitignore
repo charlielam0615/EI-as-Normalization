@@ -1,0 +1,8 @@
+.vscode
+playground
+__pycache__
+logs
+.DS_Store
+data/
+
+
