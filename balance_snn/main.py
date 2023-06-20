@@ -12,7 +12,7 @@ import brainpy.math as bm
 
 from model import SNN
 from train import get_MNIST_data, Trainer
-from utils import epoch_visual
+from utils import epoch_visual, save_loss_and_acc_figure
 
 # current time in string
 _date = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -85,14 +85,10 @@ for epoch_i in range(global_config.epochs):
         }
         bp.checkpoints.save_pytree(os.path.join(out_dir, 'mnist-lif.bp'), states)
 
+save_loss_and_acc_figure(trainer, os.path.join(out_dir, 'loss_and_acc.png'))
 
 # testing
 state_dict = bp.checkpoints.load_pytree(os.path.join(out_dir, 'mnist-lif.bp'))
 model.load_state_dict(state_dict['net'])
 _, test_acc = trainer.validate_epoch(x_test, y_test)
 print('Max test accuracy: ', test_acc)
-
-
-
-
-

@@ -20,6 +20,10 @@ class Trainer:
         self.optimizer = optimizer
         self.train_config = train_config
         self.model = model
+        self.hist_train_loss = []
+        self.hist_train_acc = []
+        self.hist_val_loss = []
+        self.hist_val_acc = []
         self.grad_fun = bm.grad(
             self.calculate_loss, 
             grad_vars=model.train_vars().unique(), 
@@ -39,6 +43,7 @@ class Trainer:
                 reg += bm.square(w_l2 - self.train_config.kappa)
         return reg
 
+    @bm.cls_jit
     def calculate_loss(self, xs, ys):
         self.model.reset_state(batch_size=xs.shape[0])
         xs = self.model.encoder(xs, num_step=self.train_config.T)
@@ -82,7 +87,11 @@ class Trainer:
         train_loss = bm.mean(bm.asarray(loss))
         self.optimizer.lr.step_epoch()
 
+        self.hist_train_loss.append(train_loss)
+        self.hist_train_acc.append(train_acc)
+
         return train_loss, train_acc
+    
 
     def validate_epoch(self, x_test, y_test):
         print("Validating...")
@@ -96,6 +105,9 @@ class Trainer:
 
         test_acc /= x_test.shape[0]
         test_loss = bm.mean(bm.asarray(loss))
+
+        self.hist_val_loss.append(test_loss)
+        self.hist_val_acc.append(test_acc)
 
         return test_loss, test_acc
 

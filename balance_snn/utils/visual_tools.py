@@ -11,9 +11,26 @@ def epoch_visual(model, inputs, epoch_id, save_dir):
     show_and_save_current(model, inputs, os.path.join(save_dir, f'currents_{epoch_id}.png'))
 
 
+def save_loss_and_acc_figure(trainer, filename):
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2, 2, 1)
+    ax1.plot(trainer.hist_train_loss)
+    ax1.set_title('train loss')
+    ax2 = fig.add_subplot(2, 2, 2)
+    ax2.plot(trainer.hist_train_acc)
+    ax2.set_title('train acc')
+    ax3 = fig.add_subplot(2, 2, 3)
+    ax3.plot(trainer.hist_val_loss)
+    ax3.set_title('val loss')
+    ax4 = fig.add_subplot(2, 2, 4)
+    ax4.plot(trainer.hist_val_acc)
+    ax4.set_title('val acc')
+    plt.savefig(filename)
+
+
 def show_and_save_weights(model, file_name):
     n_layer = model.n_layer
-    fig = plt.figure(figsize=(11, 3*n_layer))
+    fig = plt.figure(figsize=(14, 3*n_layer))
 
     for i in range(n_layer):
         ff_w = getattr(model, f'layer{i}_ff').W.value
