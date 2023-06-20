@@ -5,14 +5,13 @@ import os, time, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import uuid, json
-import functools
 from tqdm import trange
 
 import brainpy as bp
 import brainpy.math as bm
 
 from model import SNN
-from train import get_MNIST_data, calculate_loss, train_epoch, validate_epoch
+from train import get_MNIST_data, Trainer
 from utils import epoch_visual
 
 # current time in string
@@ -50,26 +49,24 @@ bm.set_environment(mode=bm.training_mode, dt=1.)
 x_train, y_train, x_test, y_test = get_MNIST_data('./data/MNIST')
 
 # build model, set optimizer and loss function
-encoder = bp.encoding.PoissonEncoder(min_val=0., max_val=1.)
 model = SNN(model_config)
-loss_fun = functools.partial(calculate_loss, model=model, loss_config=global_config, encoder=encoder)
-grad_fun = bm.grad(loss_fun, grad_vars=model.train_vars().unique(), has_aux=True, return_value=True)
 optimizer = bp.optim.Adam(lr=global_config.lr, train_vars=model.train_vars().unique())
+trainer = Trainer(model, optimizer, global_config)
 
 # visualization
-visual_inputs = encoder(x_test[0: 1], num_step=global_config.T)
+visual_inputs = model.encoder(x_test[0: 1], num_step=global_config.T)
 epoch_visual(model, visual_inputs, 0, out_dir)
 # start training
 max_test_acc = 0.
 for epoch_i in range(global_config.epochs):
     t0 = time.time()
-    train_loss, train_acc = train_epoch(x_train, y_train, grad_fun, optimizer, global_config)
+    train_loss, train_acc = trainer.train_epoch(x_train, y_train)
 
     # visualization
     epoch_visual(model, visual_inputs, epoch_i+1, out_dir)
 
     # validation
-    test_loss, test_acc = validate_epoch(x_test, y_test, loss_fun, global_config)
+    test_loss, test_acc = trainer.validate_epoch(x_test, y_test)
 
     t = (time.time() - t0) / 60
     print(f'epoch {epoch_i}, used {t:.3f} min, '
@@ -92,7 +89,7 @@ for epoch_i in range(global_config.epochs):
 # testing
 state_dict = bp.checkpoints.load_pytree(os.path.join(out_dir, 'mnist-lif.bp'))
 model.load_state_dict(state_dict['net'])
-_, test_acc = validate_epoch(x_test, y_test, loss_fun, global_config)
+_, test_acc = trainer.validate_epoch(x_test, y_test)
 print('Max test accuracy: ', test_acc)
 
 

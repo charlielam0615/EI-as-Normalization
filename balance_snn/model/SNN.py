@@ -11,6 +11,7 @@ class SNN(bp.DynamicalSystem):
         self.n_layer = config.n_layer
         self.n_neuron = config.n_neuron
         self.tau = config.tau
+        self.encoder = bp.encoding.PoissonEncoder(min_val=0., max_val=1.)
 
         for i in range(config.n_layer):
             if i == 0:
