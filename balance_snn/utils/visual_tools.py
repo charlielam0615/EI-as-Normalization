@@ -25,12 +25,13 @@ def save_loss_and_acc_figure(trainer, filename):
     ax4 = fig.add_subplot(2, 2, 4)
     ax4.plot(trainer.hist_val_acc)
     ax4.set_title('val acc')
+    plt.tight_layout()
     plt.savefig(filename)
 
 
 def show_and_save_weights(model, file_name):
     n_layer = model.n_layer
-    fig = plt.figure(figsize=(14, 3*n_layer))
+    fig = plt.figure(figsize=(16, 3*n_layer))
 
     for i in range(n_layer):
         ff_w = getattr(model, f'layer{i}_ff').W.value

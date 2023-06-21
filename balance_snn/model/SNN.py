@@ -7,6 +7,7 @@ class SNN(bp.DynamicalSystem):
         super().__init__()
 
         assert len(config.n_neuron) == config.n_layer
+        self.config = config
         self.has_I = config.has_I
         self.n_layer = config.n_layer
         self.n_neuron = config.n_neuron
@@ -153,7 +154,6 @@ class SNN(bp.DynamicalSystem):
                 self.w_pattern = [r"layer{}_ff", r"layer{}_ee"]
                 self.neu_pattern = [r"layer{}_e_neu"]
                 self.mask_pattern = {r"layer{}_ff": lambda x: x < 0}
-
         
     def update(self, p, x):
         # mask weights
@@ -192,7 +192,7 @@ class SNN(bp.DynamicalSystem):
                 i_neu.update(r_ei + r_ii)
             inp = e_neu.spike.value
 
-        output_e_spike = getattr(self, f'layer{self.n_layer-1}_e_neu').spike.value
+        outputs = [getattr(self, f'layer{i}_e_neu').spike.value for i in range(self.n_layer)]
 
-        return output_e_spike
+        return outputs
     

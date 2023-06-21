@@ -43,14 +43,22 @@ class Trainer:
                 reg += bm.square(w_l2 - self.train_config.kappa)
         return reg
 
+    def detailed_balance_regularization(self, neu_sp):
+        l1_reg = bm.Variable(0.)
+        l2_reg = bm.Variable(0.)
+        for sp in neu_sp[:-1]:
+            l1_reg += bm.mean(bm.sum(sp, axis=[0, 2], keepdims=True))
+            l2_reg += bm.mean(bm.sum(bm.square(bm.sum(sp, axis=0, keepdims=True)), axis=2))
+        return l1_reg, l2_reg
+
     @bm.cls_jit
     def calculate_loss(self, xs, ys):
         self.model.reset_state(batch_size=xs.shape[0])
         xs = self.model.encoder(xs, num_step=self.train_config.T)
         # shared arguments for looping over time
         shared = bm.shared_args_over_time(num_step=self.train_config.T)
-        outs = bm.for_loop(self.model, (shared, xs))
-        out_fr = bm.mean(outs, axis=0)
+        outs = bm.for_loop(self.model, (shared, xs), jit=True)
+        out_fr = bm.mean(outs[-1], axis=0)
         ys_onehot = bm.one_hot(ys, 10, dtype=bm.float_)
         loss = self.mse_loss(out_fr, ys_onehot)
 
@@ -60,8 +68,17 @@ class Trainer:
         else:
             global_balance_reg = 0.
 
+        if self.train_config.toggle_detailed_balance_reg:
+            l1_reg_scale = self.train_config.detailed_balance_l1_reg_scale
+            l2_reg_scale = self.train_config.detailed_balance_l2_reg_scale
+            l1_reg, l2_reg = self.detailed_balance_regularization(outs)
+            detailed_balance_reg = l1_reg_scale * l1_reg + l2_reg_scale * l2_reg
+        else:
+            detailed_balance_reg = 0.
+
         n = bm.sum(out_fr.argmax(1) == ys)
-        return loss + global_balance_reg, n
+        return loss + global_balance_reg + detailed_balance_reg, n
+
 
     @bm.cls_jit
     def optimizer_step(self, xs, ys):

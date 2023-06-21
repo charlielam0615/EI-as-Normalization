@@ -56,6 +56,7 @@ trainer = Trainer(model, optimizer, global_config)
 # visualization
 visual_inputs = model.encoder(x_test[0: 1], num_step=global_config.T)
 epoch_visual(model, visual_inputs, 0, out_dir)
+
 # start training
 max_test_acc = 0.
 for epoch_i in range(global_config.epochs):
