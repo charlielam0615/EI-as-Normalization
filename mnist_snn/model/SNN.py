@@ -79,6 +79,7 @@ class SNN(bp.DynamicalSystem):
                             config.n_neuron[i], 
                             config.n_neuron[i], 
                             W_initializer=bp.initialize.Uniform(min_val=-5/config.n_neuron[i], max_val=0), 
+                            # W_initializer=bp.initialize.Uniform(min_val=-0.001/config.n_neuron[i], max_val=0), 
                             b_initializer=None,
                             name=f'layer{i}_ii',
                         )
@@ -192,7 +193,18 @@ class SNN(bp.DynamicalSystem):
                 i_neu.update(r_ei + r_ii)
             inp = e_neu.spike.value
 
-        outputs = [getattr(self, f'layer{i}_e_neu').spike.value for i in range(self.n_layer)]
+        outputs = {
+            "e_neu":{
+                "spike": [getattr(self, f'layer{i}_e_neu').spike.value for i in range(self.n_layer)],
+                "inp": [getattr(self, f'layer{i}_e_neu').input.value for i in range(self.n_layer)],
+                "V": [getattr(self, f'layer{i}_e_neu').V.value for i in range(self.n_layer)],
+                },
+            "i_neu":{
+                "spike": [getattr(self, f'layer{i}_i_neu').spike.value for i in range(self.n_layer)],
+                "inp": [getattr(self, f'layer{i}_i_neu').input.value for i in range(self.n_layer)],
+                "V": [getattr(self, f'layer{i}_i_neu').V.value for i in range(self.n_layer)],
+                }
+            }
 
         return outputs
     

@@ -5,11 +5,54 @@ import brainpy.math as bm
 import os
 
 
-def epoch_visual(model, inputs, epoch_id, save_dir):
+def epoch_visual(model, trainer, inputs, global_config, epoch_id, save_dir):
     show_and_save_weights(model, os.path.join(save_dir, f'weights_{epoch_id}.png'))
-    show_and_save_activity(model, inputs, os.path.join(save_dir, f'activity_{epoch_id}.png'))
-    show_and_save_current(model, inputs, os.path.join(save_dir, f'currents_{epoch_id}.png'))
+    show_and_save_activity(model, inputs, global_config, os.path.join(save_dir, f'activity_{epoch_id}.png'))
+    show_and_save_current(model, inputs, global_config, os.path.join(save_dir, f'currents_{epoch_id}.png'))
+    show_and_save_wl2(model, global_config, os.path.join(save_dir, f'wl2_{epoch_id}.png'))
+    show_and_save_loss_reg(trainer, inputs, os.path.join(save_dir, f'loss_comp_{epoch_id}.png'))
+    
 
+def show_and_save_loss_reg(trainer, inputs, filename):
+    inputs, label = inputs['data'], inputs['label']
+    _, linfo = trainer.calculate_loss(inputs, label)
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    # loss_comp is a dict
+    keys = ['mse_loss', 'global_balance_reg', 'detailed_balance_l1_reg_sp', 
+            'detailed_balance_l2_reg_sp', 'detailed_balance_reg_inp']
+    key_abbrev = ['mse', 'gb', 'dbsp1', 'dbsp2', 'dbinp']
+    # bar plot of loss components
+    ax.bar(key_abbrev, [linfo[k] for k in keys])
+    plt.savefig(filename)
+    plt.close()
+
+
+def show_and_save_wl2(model, global_config, filename):
+    w_l2 = []
+    w_category = {'ff':[], 'ee':[], 'ei':[], 'ie':[], 'ii':[]}
+    for i in range(model.n_layer):
+        for wp in model.w_pattern:
+            w = getattr(model, wp.format(i)).W
+            l2_value = bm.sqrt(bm.sum(bm.square(w))).item()
+            w_l2.append(l2_value)
+            w_category[wp[-2:]].append(l2_value)
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax1.plot(w_l2)
+    ax1.plot([0, len(w_l2)], [global_config.kappa, global_config.kappa], 'r--')
+    ax1.set_title('L2 norm of weights')
+
+    ax2 = fig.add_subplot(1, 2, 2)
+    # plot bar plot of mean L2 norm of weights in w_category with error bars
+    ax2.bar(w_category.keys(), [np.mean(w_category[k]) for k in w_category.keys()])
+    ax2.errorbar(w_category.keys(), [np.mean(w_category[k]) for k in w_category.keys()],
+                    yerr=[np.std(w_category[k]) for k in w_category.keys()], fmt='none', ecolor='r')
+    ax2.plot([0, len(w_category.keys())], [global_config.kappa, global_config.kappa], 'r--')
+    ax2.set_title('In each category')
+    plt.savefig(filename)
+    
 
 def save_loss_and_acc_figure(trainer, filename):
     fig = plt.figure()
@@ -19,11 +62,13 @@ def save_loss_and_acc_figure(trainer, filename):
     ax2 = fig.add_subplot(2, 2, 2)
     ax2.plot(trainer.hist_train_acc)
     ax2.set_title('train acc')
+    ax2.set_ylim(0, 1)
     ax3 = fig.add_subplot(2, 2, 3)
     ax3.plot(trainer.hist_val_loss)
     ax3.set_title('val loss')
     ax4 = fig.add_subplot(2, 2, 4)
     ax4.plot(trainer.hist_val_acc)
+    ax4.set_ylim(0, 1)
     ax4.set_title('val acc')
     plt.tight_layout()
     plt.savefig(filename)
@@ -67,7 +112,8 @@ def show_and_save_weights(model, file_name):
     plt.close()
 
 
-def show_and_save_activity(model, inputs, file_name):
+def show_and_save_activity(model, inputs, global_config, file_name):
+    inputs = model.encoder(inputs['data'], num_step=global_config.T)
     n_layer = model.n_layer
     T = inputs.shape[0]
     fig = plt.figure(figsize=(6, 3*n_layer))
@@ -85,7 +131,8 @@ def show_and_save_activity(model, inputs, file_name):
     plt.close()
 
 
-def show_and_save_current(model, inputs, file_name):
+def show_and_save_current(model, inputs, global_config, file_name):
+    inputs = model.encoder(inputs['data'], num_step=global_config.T)
     n_layer = model.n_layer
     fig = plt.figure(figsize=(6, 3*n_layer))
 

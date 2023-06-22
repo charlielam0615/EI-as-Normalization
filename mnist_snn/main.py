@@ -54,8 +54,8 @@ optimizer = bp.optim.Adam(lr=global_config.lr, train_vars=model.train_vars().uni
 trainer = Trainer(model, optimizer, global_config)
 
 # visualization
-visual_inputs = model.encoder(x_test[0: 1], num_step=global_config.T)
-epoch_visual(model, visual_inputs, 0, out_dir)
+visual_inputs = {"data": x_test[0:1], "label": y_test[0: 1]}
+epoch_visual(model, trainer, visual_inputs, global_config, 0, out_dir)
 
 # start training
 max_test_acc = 0.
@@ -64,7 +64,7 @@ for epoch_i in range(global_config.epochs):
     train_loss, train_acc = trainer.train_epoch(x_train, y_train)
 
     # visualization
-    epoch_visual(model, visual_inputs, epoch_i+1, out_dir)
+    epoch_visual(model, trainer, visual_inputs, global_config, epoch_i+1, out_dir)
 
     # validation
     test_loss, test_acc = trainer.validate_epoch(x_test, y_test)

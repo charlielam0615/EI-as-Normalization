@@ -31,10 +31,12 @@ class Trainer:
             return_value=True
         )
 
+
     def mse_loss(self, out_fr, ys):
         return bp.losses.mean_squared_error(out_fr, ys)
     
-    def global_balance_regularization(self):
+
+    def global_balance_regularization_w_l2(self):
         reg = bm.Variable(0.)
         for i in range(self.model.n_layer):
             for wp in self.model.w_pattern:
@@ -42,14 +44,25 @@ class Trainer:
                 w_l2 = bm.sqrt(bm.sum(bm.square(w)))
                 reg += bm.square(w_l2 - self.train_config.kappa)
         return reg
+    
 
-    def detailed_balance_regularization(self, neu_sp):
+    def detailed_balance_regularization_l1_l2_spike(self, outs):
         l1_reg = bm.Variable(0.)
         l2_reg = bm.Variable(0.)
-        for sp in neu_sp[:-1]:
-            l1_reg += bm.mean(bm.sum(sp, axis=[0, 2], keepdims=True))
-            l2_reg += bm.mean(bm.sum(bm.square(bm.sum(sp, axis=0, keepdims=True)), axis=2))
+        for neu in ['e_neu', 'i_neu']:
+            for neu_sp in outs[neu]['spike']:
+                l1_reg += bm.mean(bm.sum(bm.abs(neu_sp-0.01), axis=[0, 2], keepdims=True))
+                l2_reg += bm.mean(bm.sum(bm.square(bm.sum(neu_sp, axis=0, keepdims=True)), axis=2))
         return l1_reg, l2_reg
+    
+    
+    def detailed_balance_regularization_input(self, outs):
+        reg = bm.Variable(0.)
+        for neu in ['e_neu', 'i_neu']:
+            for inp in outs[neu]['inp']:
+                reg += bm.mean(bm.sum(bm.abs(inp), axis=0))
+        return reg
+
 
     @bm.cls_jit
     def calculate_loss(self, xs, ys):
@@ -57,34 +70,55 @@ class Trainer:
         xs = self.model.encoder(xs, num_step=self.train_config.T)
         # shared arguments for looping over time
         shared = bm.shared_args_over_time(num_step=self.train_config.T)
+        # outs has keys ['spike', 'inp', 'V'] under ['e_neu'] and ['i_neu'] 
         outs = bm.for_loop(self.model, (shared, xs), jit=True)
-        out_fr = bm.mean(outs[-1], axis=0)
+        out_fr = bm.mean(outs['e_neu']['spike'][-1], axis=0)
         ys_onehot = bm.one_hot(ys, 10, dtype=bm.float_)
         loss = self.mse_loss(out_fr, ys_onehot)
 
-        if self.train_config.toggle_global_balance_reg:
+        if self.train_config.toggle_global_balance_reg_w_l2:
             reg_scale = self.train_config.global_balance_reg_scale
-            global_balance_reg = reg_scale * self.global_balance_regularization()
+            global_balance_reg = reg_scale * self.global_balance_regularization_w_l2()
         else:
-            global_balance_reg = 0.
+            global_balance_reg = bm.array([0.])
 
-        if self.train_config.toggle_detailed_balance_reg:
-            l1_reg_scale = self.train_config.detailed_balance_l1_reg_scale
-            l2_reg_scale = self.train_config.detailed_balance_l2_reg_scale
-            l1_reg, l2_reg = self.detailed_balance_regularization(outs)
-            detailed_balance_reg = l1_reg_scale * l1_reg + l2_reg_scale * l2_reg
+        if self.train_config.toggle_detailed_balance_reg_l1_l2_spike:
+            l1_reg_scale = self.train_config.detailed_balance_l1_reg_sp_scale
+            l2_reg_scale = self.train_config.detailed_balance_l2_reg_sp_scale
+            detailed_l1_reg_sp, detailed_l2_reg_sp = self.detailed_balance_regularization_l1_l2_spike(outs)
+            detailed_l1_reg_sp, detailed_l2_reg_sp = \
+                l1_reg_scale * detailed_l1_reg_sp, l2_reg_scale * detailed_l2_reg_sp
+            detailed_balance_reg_sp = detailed_l1_reg_sp + detailed_l2_reg_sp
         else:
-            detailed_balance_reg = 0.
+            detailed_balance_reg_sp, detailed_l1_reg_sp, detailed_l2_reg_sp = 0., 0., 0.
+            
+        if self.train_config.toggle_detailed_balance_reg_input:
+            detailed_l1_reg_inp = self.detailed_balance_regularization_input(outs)
+            l1_reg_scale = self.train_config.detailed_balance_l1_reg_inp_scale
+            detailed_l1_reg_inp = l1_reg_scale * detailed_l1_reg_inp
+            detailed_balance_reg_inp = detailed_l1_reg_inp
+        else:
+            detailed_balance_reg_inp, detailed_l1_reg_inp = 0., 0.
 
         n = bm.sum(out_fr.argmax(1) == ys)
-        return loss + global_balance_reg + detailed_balance_reg, n
+        loss_info = {
+            "mse_loss": loss, 
+            "global_balance_reg": global_balance_reg, 
+            "detailed_balance_l1_reg_sp": detailed_l1_reg_sp,
+            "detailed_balance_l2_reg_sp": detailed_l2_reg_sp,
+            "detailed_balance_reg_inp": detailed_balance_reg_inp,
+            "n_correct": n,
+        }
+        total_loss = loss + global_balance_reg + detailed_balance_reg_sp + detailed_balance_reg_inp
+
+        return total_loss, loss_info
 
 
     @bm.cls_jit
     def optimizer_step(self, xs, ys):
-        grads, l, n = self.grad_fun(xs, ys)
+        grads, l, linfo = self.grad_fun(xs, ys)
         self.optimizer.update(grads)
-        return l, n
+        return l, linfo
     
 
     def train_epoch(self, x_train, y_train):
@@ -96,9 +130,9 @@ class Trainer:
         for i in trange(0, x_train.shape[0], self.train_config.batch):
             X = x_train[i: i + self.train_config.batch]
             Y = y_train[i: i + self.train_config.batch]
-            l, correct_num = self.optimizer_step(X, Y)
+            l, linfo = self.optimizer_step(X, Y)
             loss.append(l)
-            train_acc += correct_num
+            train_acc += linfo['n_correct']
 
         train_acc /= x_train.shape[0]
         train_loss = bm.mean(bm.asarray(loss))
@@ -116,9 +150,9 @@ class Trainer:
         for i in trange(0, x_test.shape[0], self.train_config.batch):
             X = x_test[i: i + self.train_config.batch]
             Y = y_test[i: i + self.train_config.batch]
-            l, correct_num = self.calculate_loss(X, Y)
+            l, linfo = self.calculate_loss(X, Y)
             loss.append(l)
-            test_acc += correct_num
+            test_acc += linfo['n_correct']
 
         test_acc /= x_test.shape[0]
         test_loss = bm.mean(bm.asarray(loss))
