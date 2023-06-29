@@ -9,8 +9,8 @@ def epoch_visual(model, trainer, inputs, global_config, epoch_id, save_dir):
     show_and_save_weights(model, os.path.join(save_dir, f'weights_{epoch_id}.png'))
     show_and_save_activity(model, inputs, global_config, os.path.join(save_dir, f'activity_{epoch_id}.png'))
     show_and_save_current(model, inputs, global_config, os.path.join(save_dir, f'currents_{epoch_id}.png'))
-    # show_and_save_wl2(model, global_config, os.path.join(save_dir, f'wl2_{epoch_id}.png'))
-    # show_and_save_loss_reg(trainer, inputs, os.path.join(save_dir, f'loss_comp_{epoch_id}.png'))
+    show_and_save_wl2(model, global_config, os.path.join(save_dir, f'wl2_{epoch_id}.png'))
+    show_and_save_loss_reg(trainer, inputs, os.path.join(save_dir, f'loss_comp_{epoch_id}.png'))
     
 
 def show_and_save_loss_reg(trainer, inputs, filename):
@@ -19,9 +19,9 @@ def show_and_save_loss_reg(trainer, inputs, filename):
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
     # loss_comp is a dict
-    keys = ['mse_loss', 'global_balance_reg', 'detailed_balance_l1_reg_sp', 
-            'detailed_balance_l2_reg_sp', 'detailed_balance_reg_inp']
-    key_abbrev = ['mse', 'gb', 'dbsp1', 'dbsp2', 'dbinp']
+    keys = ['ce_loss', 'global_balance_reg', 'detailed_balance_l1_reg_sp', 
+            'detailed_balance_l2_reg_sp', 'detailed_balance_reg_inp', 'loss_reg_v']
+    key_abbrev = ['ce', 'gb', 'dbsp1', 'dbsp2', 'dbinp', 'regv']
     # bar plot of loss components
     ax.bar(key_abbrev, [linfo[k] for k in keys])
     plt.savefig(filename)
@@ -88,23 +88,23 @@ def show_and_save_weights(model, file_name):
             pass
 
         ax1 = fig.add_subplot(n_layer, 4, 1+4*i)
-        ff_fig = ax1.imshow(ff_w, aspect='auto')
+        ff_fig = ax1.imshow(ff_w, aspect='auto', cmap='YlOrBr')
         ax1.set_title("ff weights")
         plt.colorbar(ff_fig, ax=ax1)
         try:
             ax2 = fig.add_subplot(n_layer, 4, 2+4*i)
-            ei_fig = ax2.imshow(ei_w, aspect='auto')
+            ei_fig = ax2.imshow(ei_w, aspect='auto', cmap='YlOrBr')
             ax2.set_title("ei weights")
             plt.colorbar(ei_fig, ax=ax2)
             ax3 = fig.add_subplot(n_layer, 4, 3+4*i)
-            ie_fig = ax3.imshow(ie_w, aspect='auto')
+            ie_fig = ax3.imshow(ie_w, aspect='auto', cmap='YlGnBu_r')
             ax3.set_title("ie weights")
             plt.colorbar(ie_fig, ax=ax3)
         except:
             pass
 
         ax4 = fig.add_subplot(n_layer, 4, 4+4*i)
-        ee_fig = ax4.imshow(ee_w, aspect='auto')
+        ee_fig = ax4.imshow(ee_w, aspect='auto', cmap='YlOrBr')
         ax4.set_title("ee weights")
         plt.colorbar(ee_fig, ax=ax4)
 
@@ -113,18 +113,18 @@ def show_and_save_weights(model, file_name):
 
 
 def show_and_save_activity(model, inputs, global_config, file_name):
-    inputs = model.encoder(inputs['data'], num_step=global_config.T)
+    inputs = inputs['data']
     n_layer = model.n_layer
     T = inputs.shape[0]
     fig = plt.figure(figsize=(6, 3*n_layer))
 
-    mon_vars = [f'layer{i}_neu_e.spike' for i in range(n_layer)]
+    mon_vars = [f'layer{i}_e_neu.spike' for i in range(n_layer)]
     runner = bp.DSRunner(model, data_first_axis='T', monitors=mon_vars, progress_bar=False)
     runner.predict(inputs=inputs, reset_state=True)
 
     for i in range(n_layer):
         ax = fig.add_subplot(n_layer, 1, 1+i)
-        bp.visualize.raster_plot(ts=bm.arange(0, T), sp_matrix=runner.mon[f'layer{i}_neu_e.spike'][:,0], ax=ax)
+        bp.visualize.raster_plot(ts=bm.arange(0, T), sp_matrix=runner.mon[f'layer{i}_e_neu.spike'][:,0], ax=ax)
         plt.xlim([0, T])
 
     plt.savefig(file_name)
@@ -132,44 +132,37 @@ def show_and_save_activity(model, inputs, global_config, file_name):
 
 
 def show_and_save_current(model, inputs, global_config, file_name):
-    inputs = model.encoder(inputs['data'], num_step=global_config.T)
+    inputs = inputs['data']
     n_layer = model.n_layer
     fig = plt.figure(figsize=(6, 3*n_layer))
 
     mon_vars = [
-        [f'layer{i}_neu_e_inp_fast_e' for i in range(n_layer)],
-        [f'layer{i}_neu_e_inp_fast_i' for i in range(n_layer)],
-        [f'layer{i}_neu_e_inp_slow_e' for i in range(n_layer)],
-        [f'layer{i}_neu_e_inp_slow_i' for i in range(n_layer)],
-        [f'layer{i}_neu_i_inp_fast_e' for i in range(n_layer)],
-        [f'layer{i}_neu_i_inp_fast_i' for i in range(n_layer)],
-        [f'layer{i}_neu_i_inp_slow_e' for i in range(n_layer)],
-        [f'layer{i}_neu_i_inp_slow_i' for i in range(n_layer)],
+        [f'layer{i}_inp_ff' for i in range(n_layer)],
+        [f'layer{i}_inp_ee' for i in range(n_layer)],
+        [f'layer{i}_inp_ei' for i in range(n_layer)],
+        [f'layer{i}_inp_ie' for i in range(n_layer)],
+        [f'layer{i}_inp_ii' for i in range(n_layer)],
     ]
     mon_vars = sum(mon_vars, [])
     runner = bp.DSRunner(model, data_first_axis='T', monitors=mon_vars, progress_bar=False)
     runner.predict(inputs=inputs, reset_state=True)
     
     for i in range(n_layer):
-        # E neuron current component
+        # E neuron
         ax1 = fig.add_subplot(n_layer, 2, 1+i*2)
-        fast_e = np.sum(runner.mon[f'layer{i}_neu_e_inp_fast_e'], axis=0)
-        slow_e = np.sum(runner.mon[f'layer{i}_neu_e_inp_slow_e'], axis=0)
-        fast_i = np.sum(runner.mon[f'layer{i}_neu_e_inp_fast_i'], axis=0)
-        slow_i = np.sum(runner.mon[f'layer{i}_neu_e_inp_slow_i'], axis=0)
-        
-        ax1.plot(fast_e, label='fast E', color='r', linestyle='-')
-        ax1.plot(slow_e, label='slow E', color='r', linestyle='--')
-        ax1.plot(fast_i, label='fast I', color='b', linestyle='-')
-        ax1.plot(slow_i, label='slow I', color='b', linestyle='--')
-        ax1.plot(fast_e + slow_e + fast_i + slow_i, label='total', color='k')
-        # E neuron total currents
+        total_e = np.sum(runner.mon[f'layer{i}_inp_ff'], axis=0) \
+            + np.sum(runner.mon[f'layer{i}_inp_ee'], axis=0)
+        total_i = np.sum(runner.mon[f'layer{i}_inp_ie'], axis=0)
+        ax1.plot(total_e, label='E', color='r')
+        ax1.plot(total_i, label='I', color='b')
+        ax1.plot(total_e+total_i, label='total', color='k')
+        # I neuron
         ax2 = fig.add_subplot(n_layer, 2, 2+i*2)
-        total_e = fast_e + slow_e
-        total_i = fast_i + slow_i
-        ax2.plot(total_e, label='E', color='r', linestyle='-')
-        ax2.plot(total_i, label='I', color='b', linestyle='-')
-        ax2.plot(total_e+total_i, label='total', color='k', linestyle='-')       
+        total_e = np.sum(runner.mon[f'layer{i}_inp_ei'], axis=0)
+        total_i = np.sum(runner.mon[f'layer{i}_inp_ii'], axis=0)
+        ax2.plot(total_e, label='E', color='r', linestyle='--')
+        ax2.plot(total_i, label='I', color='b', linestyle='--')
+        ax2.plot(total_e+total_i, label='total', color='k', linestyle='--')       
 
     plt.savefig(file_name)
     plt.close()

@@ -1,8 +1,10 @@
 import brainpy as bp
 import brainpy.math as bm
+from wm_snn.model.GIF import GIF as GIFa
+from brainpy.neurons import GIF as GIFb
 
 
-class SNN(bp.DynamicalSystem):
+class SNN_GIF(bp.DynamicalSystem):
     def __init__(self, config):
         super().__init__()
 
@@ -12,20 +14,33 @@ class SNN(bp.DynamicalSystem):
         self.n_layer = config.n_layer
         self.n_neuron = config.n_neuron
         self.tau = config.tau
-        self.encoder = bp.encoding.PoissonEncoder(min_val=0., max_val=1.)
 
         for i in range(config.n_layer):
             if i == 0:
                 setattr(self, 
                     f'layer{i}_ff', 
                     bp.layers.Dense(
-                        28 * 28, 
+                        100, 
                         config.n_neuron[i], 
-                        W_initializer=bp.initialize.Uniform(min_val=0, max_val=5/(28*28)), 
-                        b_initializer=None,
-                        name=f'layer{i}_ff',
+                        W_initializer=bp.initialize.Uniform(min_val=0, max_val=1.0/100), 
+                        b_initializer=None, 
+                        name=f'layer{i}_ff', 
                     )
                 )
+
+                setattr(self,
+                    f'layer{i}_balance_ff',
+                    bp.dnn.JitFPHomoLinear(
+                        100,
+                        config.n_neuron[i],
+                        prob=0.1,
+                        weight=1/bm.sqrt(config.n_neuron[i]),
+                        seed=0,
+                        mode=bm.BatchingMode()
+                    )
+                )
+
+
             else:
                 # feedforward connection from layer i-1 to layer i
                 setattr(self, 
@@ -33,22 +48,48 @@ class SNN(bp.DynamicalSystem):
                         bp.layers.Dense(
                             config.n_neuron[i-1], 
                             config.n_neuron[i], 
-                            W_initializer=bp.initialize.Uniform(min_val=0, max_val=5/config.n_neuron[i-1]), 
+                            W_initializer=bp.initialize.Uniform(min_val=0, max_val=1.0/config.n_neuron[i-1]), 
                             b_initializer=None,
                             name=f'layer{i}_ff',
                         )
                 )
+
+                setattr(self,
+                    f'layer{i}_balance_ff',
+                    bp.dnn.JitFPHomoLinear(
+                        config.n_neuron[i-1],
+                        config.n_neuron[i],
+                        prob=0.1,
+                        weight=1/bm.sqrt(config.n_neuron[i]),
+                        seed=0,
+                        mode=bm.BatchingMode()
+                    )
+                )
+
             # recurrent connection in layer i from E to E
             setattr(self,
                     f'layer{i}_ee',
                     bp.layers.Dense(
                         config.n_neuron[i], 
                         config.n_neuron[i], 
-                        W_initializer=bp.initialize.Uniform(min_val=0, max_val=5/config.n_neuron[i]), 
+                        W_initializer=bp.initialize.Uniform(min_val=0, max_val=1.0/config.n_neuron[i]), 
                         b_initializer=None,
                         name=f'layer{i}_ee',
                     )
             )
+
+            setattr(self,
+                    f'layer{i}_balance_ee',
+                    bp.dnn.JitFPHomoLinear(
+                        config.n_neuron[i],
+                        config.n_neuron[i],
+                        prob=0.1,
+                        weight=1/bm.sqrt(config.n_neuron[i]),
+                        seed=0,
+                        mode=bm.BatchingMode()
+                    )
+            )
+
             # recurrent connection in layer i from E to I
             if config.has_I:
                 setattr(self,
@@ -56,62 +97,107 @@ class SNN(bp.DynamicalSystem):
                         bp.layers.Dense(
                             config.n_neuron[i], 
                             config.n_neuron[i], 
-                            W_initializer=bp.initialize.Uniform(min_val=0, max_val=5/config.n_neuron[i]), 
+                            W_initializer=bp.initialize.Uniform(min_val=0, max_val=1.0/config.n_neuron[i]), 
                             b_initializer=None,
                             name=f'layer{i}_ei',
                         )
                 )
+
+                setattr(self,
+                    f'layer{i}_balance_ei',
+                    bp.dnn.JitFPHomoLinear(
+                        config.n_neuron[i],
+                        config.n_neuron[i],
+                        prob=0.1,
+                        weight=1/bm.sqrt(config.n_neuron[i]),
+                        seed=0,
+                        mode=bm.BatchingMode()
+                    )
+                )
+
                 # recurrent connection in layer i from I to E
                 setattr(self,
                         f'layer{i}_ie',
                         bp.layers.Dense(
                             config.n_neuron[i], 
                             config.n_neuron[i], 
-                            W_initializer=bp.initialize.Uniform(min_val=-5/config.n_neuron[i], max_val=0), 
+                            W_initializer=bp.initialize.Uniform(min_val=-1.0/config.n_neuron[i], max_val=0), 
                             b_initializer=None,
                             name=f'layer{i}_ie',
                         )
                 )
+
+                setattr(self,
+                    f'layer{i}_balance_ie',
+                    bp.dnn.JitFPHomoLinear(
+                        config.n_neuron[i],
+                        config.n_neuron[i],
+                        prob=0.1,
+                        weight=-1/bm.sqrt(config.n_neuron[i]),
+                        seed=0,
+                        mode=bm.BatchingMode()
+                    )
+                )
+
                 # recurrent connection in layer i from I to I
                 setattr(self,
                         f'layer{i}_ii',
                         bp.layers.Dense(
                             config.n_neuron[i], 
                             config.n_neuron[i], 
-                            W_initializer=bp.initialize.Uniform(min_val=-5/config.n_neuron[i], max_val=0), 
-                            # W_initializer=bp.initialize.Uniform(min_val=-0.001/config.n_neuron[i], max_val=0), 
+                            W_initializer=bp.initialize.Uniform(min_val=-2.5/config.n_neuron[i], max_val=0), 
                             b_initializer=None,
                             name=f'layer{i}_ii',
                         )
                 )
 
+                setattr(self,
+                    f'layer{i}_balance_ii',
+                    bp.dnn.JitFPHomoLinear(
+                        config.n_neuron[i],
+                        config.n_neuron[i],
+                        prob=0.1,
+                        weight=-1/bm.sqrt(config.n_neuron[i]),
+                        seed=0,
+                        mode=bm.BatchingMode()
+                    )
+                )
+                
                 # E neurons in layer i
+                E_neuron = self.select_neuron(i, name=f'layer{i}_E', E_or_I='E')
                 setattr(self,
                         f'layer{i}_e_neu',
-                        bp.neurons.LIF(
-                            config.n_neuron[i], 
-                            V_rest=0., 
-                            V_reset=0., 
-                            V_th=1., 
-                            tau=config.tau, 
-                            spike_fun=bm.surrogate.arctan,
-                            name=f'layer{i}_E',
-                        )
+                        E_neuron,
+                )
+
+                # E exponential current
+                setattr(self,
+                        f'layer{i}_e_neu_e_CUBA',
+                        bp.dyn.CUBA(name=f'layer{i}_e_neu_e_CUBA')
+                )
+
+                setattr(self,
+                        f'layer{i}_e_neu_i_CUBA',
+                        bp.dyn.CUBA(name=f'layer{i}_e_neu_i_CUBA')
                 )
 
             if config.has_I:
                 # I neurons in layer i
+                I_neuron = self.select_neuron(i, name=f'layer{i}_I', E_or_I='I')
                 setattr(self,
                         f'layer{i}_i_neu',
-                        bp.neurons.LIF(
-                            config.n_neuron[i], 
-                            V_rest=0., 
-                            V_reset=0., 
-                            V_th=1., 
-                            tau=config.tau, 
-                            spike_fun=bm.surrogate.arctan,
-                            name=f'layer{i}_I',
-                        )
+                        I_neuron,
+                )
+
+                # I exponential current
+                setattr(self,
+                        f'layer{i}_i_neu_e_CUBA',
+                        bp.dyn.CUBA(name=f'layer{i}_i_neu_e_CUBA')
+                )
+
+                setattr(self,
+                        f'layer{i}_i_neu_i_CUBA',
+                        bp.dyn.CUBA(name=f'layer{i}_i_neu_i_CUBA')
                 )
             
             # input current
@@ -154,7 +240,10 @@ class SNN(bp.DynamicalSystem):
             else:
                 self.w_pattern = [r"layer{}_ff", r"layer{}_ee"]
                 self.neu_pattern = [r"layer{}_e_neu"]
-                self.mask_pattern = {r"layer{}_ff": lambda x: x < 0}
+                self.mask_pattern = {
+                    r"layer{}_ff": lambda x: x < 0,
+                    r"layer{}_ee": lambda x: x < 0,
+                }
         
     def update(self, p, x):
         # mask weights
@@ -187,24 +276,74 @@ class SNN(bp.DynamicalSystem):
             
             bp.share.save(t=p)
             e_neu = getattr(self, f'layer{i}_e_neu')
-            e_neu.update(ff_inp + r_ie + r_ee)
+            e_neu_e_inp = getattr(self, f'layer{i}_e_neu_e_CUBA')(ff_inp + r_ee)
+            e_neu_i_inp = getattr(self, f'layer{i}_e_neu_i_CUBA')(r_ie)
+            e_neu_SI = self.config.SI_k * e_neu_e_inp * e_neu_i_inp
+            e_neu.update(e_neu_e_inp + e_neu_i_inp + e_neu_SI)
             if self.has_I:
                 i_neu = getattr(self, f'layer{i}_i_neu')
-                i_neu.update(r_ei + r_ii)
+                i_neu_e_inp = getattr(self, f'layer{i}_i_neu_e_CUBA')(r_ei)
+                i_neu_i_inp = getattr(self, f'layer{i}_i_neu_i_CUBA')(r_ii)
+                i_neu.update(i_neu_e_inp + i_neu_i_inp)
             inp = e_neu.spike.value
 
         outputs = {
             "e_neu":{
                 "spike": [getattr(self, f'layer{i}_e_neu').spike.value for i in range(self.n_layer)],
-                "inp": [getattr(self, f'layer{i}_e_neu').input.value for i in range(self.n_layer)],
                 "V": [getattr(self, f'layer{i}_e_neu').V.value for i in range(self.n_layer)],
+                "inp": [getattr(self, f'layer{i}_e_neu').input.value for i in range(self.n_layer)],
                 },
             "i_neu":{
                 "spike": [getattr(self, f'layer{i}_i_neu').spike.value for i in range(self.n_layer)],
-                "inp": [getattr(self, f'layer{i}_i_neu').input.value for i in range(self.n_layer)],
                 "V": [getattr(self, f'layer{i}_i_neu').V.value for i in range(self.n_layer)],
+                "inp": [getattr(self, f'layer{i}_i_neu').input.value for i in range(self.n_layer)],
                 }
             }
 
         return outputs
+    
+    def select_neuron(self, i, name, E_or_I):
+        if E_or_I == "E":
+            A1 = bm.zeros(self.config.n_neuron[i])
+        elif E_or_I == "I":
+            A1 = bm.ones(self.config.n_neuron[i])
+
+        gif_pars = dict(
+            Ath=1, A2=-0.6, adaptive_th=False, tau_I1=10., v_scale_var=True,
+            tau_I2=bm.random.uniform(100, 3000, self.config.n_neuron[i]), A1=A1
+        )
+
+        if self.config.neuron_type == "LIF":
+            neuron = bp.neurons.LIF(
+                self.config.n_neuron[i],
+                V_rest=0.,
+                V_reset=0.,
+                V_th=1.,
+                tau=self.config.tau,
+                spike_fun=bm.surrogate.arctan,
+                name=name
+            )
+        elif self.config.neuron_type == "GIFa":
+            neuron = GIFa(
+                self.config.n_neuron[i], 
+                V_rest=0., 
+                V_th_inf=1., 
+                tau=self.config.tau, 
+                spike_fun=bm.surrogate.arctan,
+                V_initializer=bp.init.ZeroInit(),
+                Vth_initializer=bp.init.OneInit(1.),
+                name=name,
+                **gif_pars,
+            )
+        elif self.config.neuron_type == "GIFb":
+            neuron = GIFb(
+                self.config.n_neuron[i], 
+                V_rest=0., 
+                V_reset=0.,
+                V_th_inf=1., 
+                tau=self.config.tau, 
+                spike_fun=bm.surrogate.arctan,
+                name=name,
+            )
+        return neuron
     

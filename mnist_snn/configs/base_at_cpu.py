@@ -1,4 +1,4 @@
-from balance_snn.utils import Config
+from mnist_snn.utils import Config
 
 model_config = Config(
     tau = 2.0, 
@@ -9,7 +9,7 @@ model_config = Config(
 
 global_config = Config(
     T = 100,
-    device = 'gpu',
+    device = 'cpu',
     batch = 64,
     epochs = 15,
     lr = 1e-3,

@@ -10,17 +10,17 @@ from tqdm import trange
 import brainpy as bp
 import brainpy.math as bm
 
-from model import SNN_AT, SNN_PT
-from train import get_MNIST_data, Trainer
+from model import SNN_LIF, SNN_GIF
+from train import get_WM_data, Trainer
 from utils import epoch_visual, save_loss_and_acc_figure
 
 # current time in string
 _date = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
 # parse arguments
-parser = argparse.ArgumentParser(description='LIF MNIST Training')
-parser.add_argument('-config', type=str, default='configs/base_cpu.py', help='config file') 
-parser.add_argument('-out-dir', type=str, default='./mnist_snn/logs', help='root dir for saving logs and checkpoint')
+parser = argparse.ArgumentParser(description='Training SNN for Working Memory Tasks')
+parser.add_argument('-config', type=str, default='configs/base_gpu.py', help='config file') 
+parser.add_argument('-out-dir', type=str, default='./wm_snn/logs', help='root dir for saving logs and checkpoint')
 parser.add_argument('-exp-id', type=str, default='_'.join([_date, str(uuid.uuid4())[:8]]), help='experiment name') 
 args = parser.parse_args()
 print(f"using configs: {args.config}")
@@ -28,6 +28,10 @@ print(f"using configs: {args.config}")
 all_config = importlib.import_module(args.config.replace('/', '.').replace('.py', ''))
 model_config = all_config.model_config
 global_config = all_config.global_config
+if model_config.neuron_type == 'LIF':
+    SNN = SNN_LIF
+elif model_config.neuron_type.startswith('GIF'):
+    SNN = SNN_GIF
 
 # make output dir
 out_dir = os.path.join(args.out_dir, args.exp_id)
@@ -43,31 +47,32 @@ with open(os.path.join(out_dir, 'config.json'), 'w') as f:
         f, indent=4
     )
 
-# download data
+# get data
 bm.set_platform(global_config.device)
-bm.set_environment(mode=bm.training_mode, dt=1.)
-x_train, y_train, x_test, y_test = get_MNIST_data('./data/MNIST')
+bm.set_environment(mode=bm.training_mode, dt=global_config.dt)
+train_loader, test_loader = get_WM_data()
 
 # build model, set optimizer and loss function
-model = SNN_PT(model_config)
+model = SNN(model_config)
 optimizer = bp.optim.Adam(lr=global_config.lr, train_vars=model.train_vars().unique())
-trainer = Trainer(model, optimizer, global_config)
+trainer = Trainer(model, optimizer, global_config, t_test=train_loader.dataset.t_test)
 
 # visualization
-visual_inputs = {"data": x_test[0:1], "label": y_test[0: 1]}
+x_test, y_test = next(iter(test_loader))
+visual_inputs = {"data": x_test[:, 0:1], "label": y_test[0:1]}
 epoch_visual(model, trainer, visual_inputs, global_config, 0, out_dir)
 
 # start training
 max_test_acc = 0.
 for epoch_i in range(global_config.epochs):
     t0 = time.time()
-    train_loss, train_acc = trainer.train_epoch(x_train, y_train)
+    train_loss, train_acc = trainer.train_epoch(train_loader)
 
     # visualization
     epoch_visual(model, trainer, visual_inputs, global_config, epoch_i+1, out_dir)
 
     # validation
-    test_loss, test_acc = trainer.validate_epoch(x_test, y_test)
+    test_loss, test_acc = trainer.validate_epoch(test_loader)
 
     t = (time.time() - t0) / 60
     print(f'epoch {epoch_i}, used {t:.3f} min, '
@@ -84,12 +89,12 @@ for epoch_i in range(global_config.epochs):
             'train_acc': train_acc,
             'test_acc': test_acc,
         }
-        bp.checkpoints.save_pytree(os.path.join(out_dir, 'mnist-lif.bp'), states)
+        bp.checkpoints.save_pytree(os.path.join(out_dir, f'wm-{model_config.neuron_type.lower()}.bp'), states)
 
 save_loss_and_acc_figure(trainer, os.path.join(out_dir, 'loss_and_acc.png'))
 
 # testing
-state_dict = bp.checkpoints.load_pytree(os.path.join(out_dir, 'mnist-lif.bp'))
+state_dict = bp.checkpoints.load_pytree(os.path.join(out_dir, f'wm-{model_config.neuron_type.lower()}.bp'))
 model.load_state_dict(state_dict['net'])
-_, test_acc = trainer.validate_epoch(x_test, y_test)
+_, test_acc = trainer.validate_epoch(test_loader)
 print('Max test accuracy: ', test_acc)
